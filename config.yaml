@@ -1,0 +1,57 @@
+# Guardian Configuration
+# Offline LLM Agent optimized for 8GB RAM
+
+agent:
+  name: "Guardian"
+  version: "1.0.0"
+
+llm:
+  # Model optimized for low RAM (choose Q4_K_M or Q4_0 quantization)
+  model_path: "~/.local/share/guardian/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+  # Alternative smaller models:
+  # - phi-2.Q4_K_M.gguf (~1.6GB)
+  # - tinyllama-1.1b-chat.Q4_K_M.gguf (~700MB)
+
+  # Memory settings for 8GB RAM
+  n_ctx: 2048          # Context window (reduce for less RAM)
+  n_batch: 256         # Batch size
+  n_threads: 4         # CPU threads
+  n_gpu_layers: 0      # Set to 0 for CPU-only
+
+  # Generation settings
+  temperature: 0.7
+  max_tokens: 512
+  top_p: 0.9
+
+reasoning:
+  enabled: true
+  save_to_file: true
+  log_dir: "data/reasoning"
+  max_steps: 10
+
+firewall:
+  enabled: true
+  blocked_ips_file: "data/blocked_ips/blocked.txt"
+  auto_block_suspicious: true
+
+tools:
+  file_search:
+    enabled: true
+    search_paths:
+      - "~"
+      - "/etc"
+      - "/var/log"
+    excluded_dirs:
+      - ".git"
+      - "node_modules"
+      - "__pycache__"
+
+  web_search:
+    enabled: true
+    provider: "duckduckgo"
+    max_results: 5
+
+ui:
+  theme: "dark"
+  window_width: 1200
+  window_height: 800

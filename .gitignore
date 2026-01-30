@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Data (keep structure but not content)
+data/reasoning/*.json
+data/blocked_ips/blocked.txt
+!data/reasoning/.gitkeep
+!data/blocked_ips/.gitkeep
+
+# Logs
+logs/*.log
+
+# Models (too large for git)
+*.gguf
+*.bin
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.spec

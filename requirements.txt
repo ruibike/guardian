@@ -1,0 +1,21 @@
+# Guardian - Offline LLM Agent
+# Optimized for 8GB RAM systems
+
+# LLM Backend (choose one)
+llama-cpp-python>=0.2.50  # Local LLM inference, CPU optimized
+
+# UI Framework
+PyGObject>=3.44.0  # GTK4 bindings
+
+# Web Search
+duckduckgo-search>=4.0  # Privacy-focused search
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# File Operations
+watchdog>=3.0.0  # File system monitoring
+
+# Utilities
+pyyaml>=6.0  # Configuration
+rich>=13.0  # Terminal formatting
+psutil>=5.9.0  # System monitoring
