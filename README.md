@@ -4,36 +4,38 @@ Um agente AI local otimizado para sistemas Ubuntu com 8GB de RAM.
 
 ## Funcionalidades
 
-- **Raciocínio Autónomo**: O Guardian pensa passo a passo e grava todo o processo de raciocínio
-- **Pesquisa de Ficheiros**: Encontra ficheiros no sistema por nome ou conteúdo
+- **Raciocinio Autonomo**: O Guardian pensa passo a passo e grava todo o processo de raciocinio
+- **Pesquisa de Ficheiros**: Encontra ficheiros no sistema por nome ou conteudo
 - **Pesquisa na Internet**: Usa DuckDuckGo para pesquisas privadas
-- **Gestão de Firewall**: Bloqueia e desbloqueia IPs suspeitos
-- **Interface Gráfica**: UI moderna com GTK4/Adwaita
+- **Gestao de Firewall**: Bloqueia e desbloqueia IPs suspeitos
+- **Interface Grafica**: UI moderna com CustomTkinter (Dark Mode)
 
 ## Requisitos
 
-- Ubuntu 20.04+ (ou derivados)
-- Python 3.9+
-- 8GB RAM (mínimo recomendado)
-- GTK4 e libadwaita (para interface gráfica)
+- Ubuntu 18.04+ / Debian 10+ (ou qualquer distribuicao Linux)
+- Python 3.8+
+- 8GB RAM (minimo recomendado)
 
-## Instalação
+## Instalacao
 
-### 1. Dependências do Sistema
-
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install python3-pip python3-gi python3-gi-cairo gir1.2-gtk-4.0 libadwaita-1-dev
-```
-
-### 2. Dependências Python
+### Instalacao Rapida (Recomendada)
 
 ```bash
+# Clone o repositorio
+git clone https://github.com/seuusuario/Agent1.git
+cd Agent1
+
+# Crie um ambiente virtual (opcional mas recomendado)
+python3 -m venv venv
+source venv/bin/activate
+
+# Instale as dependencias
 pip install -r requirements.txt
 ```
 
-### 3. Modelo LLM (Opcional)
+Isso e tudo! Nao precisa de `apt install` nem headers de sistema.
+
+### Modelo LLM (Opcional)
 
 Para usar um modelo LLM local:
 
@@ -41,7 +43,7 @@ Para usar um modelo LLM local:
 mkdir -p ~/.local/share/guardian/models
 cd ~/.local/share/guardian/models
 
-# Mistral 7B Q4 (~4GB, bom equilíbrio qualidade/RAM)
+# Mistral 7B Q4 (~4GB, bom equilibrio qualidade/RAM)
 wget https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf
 
 # OU modelos mais pequenos para sistemas com menos RAM:
@@ -54,7 +56,7 @@ wget https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/
 
 ## Uso
 
-### Interface Gráfica
+### Interface Grafica
 
 ```bash
 python main.py
@@ -74,15 +76,17 @@ python main.py --check
 
 ## Comandos CLI
 
-| Comando | Descrição |
+| Comando | Descricao |
 |---------|-----------|
 | `/quit`, `/exit` | Sair |
-| `/clear` | Limpar histórico |
+| `/clear` | Limpar historico |
 | `/blocked` | Listar IPs bloqueados |
 | `/block <ip>` | Bloquear IP |
 | `/unblock <ip>` | Desbloquear IP |
 | `/search <query>` | Pesquisar ficheiros |
 | `/web <query>` | Pesquisar na internet |
+| `/scan` | Analisar conexoes de rede |
+| `/suspicious` | Mostrar IPs suspeitos |
 | `/help` | Mostrar ajuda |
 
 ## Estrutura do Projeto
@@ -90,25 +94,26 @@ python main.py --check
 ```
 guardian/
 ├── main.py              # Ponto de entrada
-├── config.yaml          # Configuração
-├── requirements.txt     # Dependências Python
+├── config.yaml          # Configuracao
+├── requirements.txt     # Dependencias Python
 ├── src/
 │   ├── agent/
 │   │   ├── llm_agent.py    # Agente LLM principal
-│   │   └── reasoning.py     # Motor de raciocínio
+│   │   └── reasoning.py     # Motor de raciocinio
 │   ├── tools/
 │   │   ├── file_search.py   # Pesquisa de ficheiros
 │   │   ├── web_search.py    # Pesquisa na internet
-│   │   └── firewall.py      # Gestão de IPs
+│   │   ├── network_monitor.py # Monitor de rede
+│   │   └── firewall.py      # Gestao de IPs
 │   └── ui/
-│       └── main_window.py   # Interface GTK4
+│       └── main_window.py   # Interface CustomTkinter
 ├── data/
-│   ├── reasoning/       # Logs de raciocínio
+│   ├── reasoning/       # Logs de raciocinio
 │   └── blocked_ips/     # Lista de IPs bloqueados
-└── logs/                # Logs da aplicação
+└── logs/                # Logs da aplicacao
 ```
 
-## Configuração
+## Configuracao
 
 Edita `config.yaml` para personalizar:
 
@@ -120,17 +125,17 @@ llm:
   n_gpu_layers: 0      # 0 para CPU-only
 
 reasoning:
-  save_to_file: true   # Gravar raciocínio
-  max_steps: 10        # Máximo de passos
+  save_to_file: true   # Gravar raciocinio
+  max_steps: 10        # Maximo de passos
 
 firewall:
   enabled: true
   auto_block_suspicious: true
 ```
 
-## Otimização para 8GB RAM
+## Otimizacao para 8GB RAM
 
-- Usa quantização Q4_K_M para modelos (4-bit)
+- Usa quantizacao Q4_K_M para modelos (4-bit)
 - Contexto limitado a 2048 tokens
 - Sem GPU layers (usa CPU)
 - Modelo Mistral 7B usa ~4GB de RAM
@@ -140,6 +145,14 @@ Para sistemas com menos RAM:
 - Reduz `n_ctx` para 1024
 - Reduz `n_batch` para 128
 
-## Licença
+## Portabilidade
+
+Este projeto foi migrado de GTK4/PyGObject para CustomTkinter para garantir:
+- **Instalacao Universal**: Funciona apenas com `pip install`
+- **Sem dependencias de sistema**: Nao precisa de `apt install` nem compilacao
+- **Compatibilidade**: Ubuntu 18.04+, Debian 10+, e outras distribuicoes Linux
+- **Visual Moderno**: Tema escuro arredondado semelhante ao GNOME/Libadwaita
+
+## Licenca
 
 MIT License

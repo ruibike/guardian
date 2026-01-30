@@ -1,16 +1,15 @@
 """
-Guardian UI - Interface GTK4 Principal
-Aplicação com separadores (tabs) para diferentes funcionalidades
+Guardian UI - Interface CustomTkinter Principal
+Aplicacao com separadores (tabs) para diferentes funcionalidades
+Versao portavel - funciona em qualquer Linux com pip install
 """
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-
-from gi.repository import Gtk, Adw, GLib, Pango, Gdk
+import customtkinter as ctk
 import threading
 import os
 import sys
+from tkinter import ttk
+import tkinter as tk
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,22 +20,23 @@ from tools.firewall import FirewallManager
 from tools.file_search import FileSearchTool
 from tools.web_search import WebSearchTool
 
+# Configure CustomTkinter
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
 
-class GuardianApp(Adw.Application):
-    """Aplicação principal Guardian."""
+
+class GuardianApp:
+    """Aplicacao principal Guardian."""
 
     def __init__(self):
-        super().__init__(application_id='com.guardian.agent')
-        self.connect('activate', self.on_activate)
-
-        # Initialize components
         self.config = self._load_config()
         self.agent = None
         self.firewall = None
         self.reasoning_engine = None
+        self.window = None
 
     def _load_config(self):
-        """Carrega configuração."""
+        """Carrega configuracao."""
         import yaml
         config_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
@@ -52,13 +52,11 @@ class GuardianApp(Adw.Application):
                 "firewall": {"blocked_ips_file": "data/blocked_ips/blocked.txt"}
             }
 
-    def on_activate(self, app):
-        """Ativa a aplicação."""
-        # Initialize components
+    def initialize(self):
+        """Inicializa componentes."""
         self.firewall = FirewallManager(self.config.get("firewall", {}))
         self.reasoning_engine = ReasoningEngine(self.config.get("reasoning", {}))
 
-        # Setup tools for agent
         tools = {
             "file_search": self._tool_file_search,
             "web_search": self._tool_web_search,
@@ -69,11 +67,6 @@ class GuardianApp(Adw.Application):
 
         self.agent = GuardianAgent(self.config, tools)
         self.agent.initialize()
-
-        # Create main window
-        self.win = MainWindow(application=app)
-        self.win.set_app(self)
-        self.win.present()
 
     def _tool_file_search(self, query: str, path: str = "~") -> str:
         """Tool wrapper for file search."""
@@ -101,8 +94,8 @@ class GuardianApp(Adw.Application):
         """Tool wrapper for blocking IP."""
         result = self.firewall.block_ip(ip, reason)
         if result["success"]:
-            # Update UI
-            GLib.idle_add(self.win.refresh_blocked_ips)
+            if self.window:
+                self.window.after(0, self.window.refresh_blocked_ips)
             return f"IP {ip} bloqueado com sucesso."
         return f"Erro: {result.get('error', 'Desconhecido')}"
 
@@ -110,7 +103,8 @@ class GuardianApp(Adw.Application):
         """Tool wrapper for unblocking IP."""
         result = self.firewall.unblock_ip(ip)
         if result["success"]:
-            GLib.idle_add(self.win.refresh_blocked_ips)
+            if self.window:
+                self.window.after(0, self.window.refresh_blocked_ips)
             return f"IP {ip} desbloqueado."
         return f"Erro: {result.get('error', 'Desconhecido')}"
 
@@ -124,89 +118,120 @@ class GuardianApp(Adw.Application):
             output.append(f"  - {entry['ip']}: {entry['reason']}")
         return "\n".join(output)
 
+    def run(self):
+        """Executa a aplicacao."""
+        self.initialize()
+        self.window = MainWindow(self)
+        self.window.mainloop()
 
-class MainWindow(Adw.ApplicationWindow):
+
+class MainWindow(ctk.CTk):
     """Janela principal com separadores."""
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.app_ref = None
+    def __init__(self, app: GuardianApp):
+        super().__init__()
+        self.app_ref = app
 
-        self.set_title("Guardian - Agente LLM Offline")
-        self.set_default_size(1200, 800)
-
-        # Apply dark theme
-        style_manager = Adw.StyleManager.get_default()
-        style_manager.set_color_scheme(Adw.ColorScheme.PREFER_DARK)
+        self.title("Guardian - Agente LLM Offline")
+        self.geometry("1200x800")
+        self.minsize(800, 600)
 
         # Main layout
-        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.set_content(self.main_box)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        # Header bar
-        self.header = Adw.HeaderBar()
-        self.main_box.append(self.header)
+        # Header
+        self._create_header()
 
-        # Title
-        title_label = Gtk.Label(label="Guardian")
-        title_label.add_css_class("title-1")
-        self.header.set_title_widget(title_label)
-
-        # Menu button
-        menu_button = Gtk.MenuButton()
-        menu_button.set_icon_name("open-menu-symbolic")
-        self.header.pack_end(menu_button)
-
-        # Create notebook (tabs)
-        self.notebook = Gtk.Notebook()
-        self.notebook.set_vexpand(True)
-        self.main_box.append(self.notebook)
+        # Tabview (tabs)
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.grid(row=1, column=0, padx=10, pady=(0, 5), sticky="nsew")
 
         # Create tabs
+        self.tab_chat = self.tabview.add("Chat")
+        self.tab_blocked = self.tabview.add("IPs Bloqueados")
+        self.tab_reasoning = self.tabview.add("Raciocinio")
+        self.tab_tools = self.tabview.add("Ferramentas")
+
         self._create_chat_tab()
         self._create_blocked_ips_tab()
         self._create_reasoning_tab()
         self._create_tools_tab()
 
         # Status bar
-        self.status_bar = Gtk.Label(label="Pronto")
-        self.status_bar.set_halign(Gtk.Align.START)
-        self.status_bar.set_margin_start(10)
-        self.status_bar.set_margin_end(10)
-        self.status_bar.set_margin_top(5)
-        self.status_bar.set_margin_bottom(5)
-        self.main_box.append(self.status_bar)
+        self.status_var = ctk.StringVar(value="Pronto")
+        self.status_bar = ctk.CTkLabel(
+            self,
+            textvariable=self.status_var,
+            anchor="w",
+            height=25
+        )
+        self.status_bar.grid(row=2, column=0, padx=10, pady=(0, 5), sticky="ew")
 
-    def set_app(self, app):
-        """Define referência para a aplicação."""
-        self.app_ref = app
-        self.refresh_blocked_ips()
+        # Initial data load
+        self.after(100, self.refresh_blocked_ips)
+
+    def _create_header(self):
+        """Cria o cabecalho."""
+        header_frame = ctk.CTkFrame(self, height=50)
+        header_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text="Guardian",
+            font=ctk.CTkFont(size=24, weight="bold")
+        )
+        title_label.grid(row=0, column=0, padx=20, pady=10, sticky="w")
+
+        subtitle_label = ctk.CTkLabel(
+            header_frame,
+            text="Agente LLM Offline - Linux Safe Mode",
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        subtitle_label.grid(row=0, column=1, padx=20, pady=10)
+
+        # Theme toggle
+        self.theme_switch = ctk.CTkSwitch(
+            header_frame,
+            text="Tema Escuro",
+            command=self._toggle_theme,
+            onvalue="Dark",
+            offvalue="Light"
+        )
+        self.theme_switch.grid(row=0, column=2, padx=20, pady=10, sticky="e")
+        self.theme_switch.select()
+
+    def _toggle_theme(self):
+        """Alterna entre tema claro e escuro."""
+        mode = self.theme_switch.get()
+        ctk.set_appearance_mode(mode)
 
     def _create_chat_tab(self):
         """Cria a tab de chat com o agente."""
-        chat_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        chat_box.set_margin_start(10)
-        chat_box.set_margin_end(10)
-        chat_box.set_margin_top(10)
-        chat_box.set_margin_bottom(10)
+        self.tab_chat.grid_columnconfigure(0, weight=1)
+        self.tab_chat.grid_rowconfigure(0, weight=1)
 
-        # Chat history (scrollable)
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_vexpand(True)
-        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        # Chat frame
+        chat_frame = ctk.CTkFrame(self.tab_chat)
+        chat_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        chat_frame.grid_columnconfigure(0, weight=1)
+        chat_frame.grid_rowconfigure(0, weight=1)
 
-        self.chat_view = Gtk.TextView()
-        self.chat_view.set_editable(False)
-        self.chat_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.chat_view.set_left_margin(10)
-        self.chat_view.set_right_margin(10)
-        self.chat_view.set_top_margin(10)
-        self.chat_buffer = self.chat_view.get_buffer()
+        # Chat history (scrollable textbox)
+        self.chat_textbox = ctk.CTkTextbox(
+            chat_frame,
+            wrap="word",
+            font=ctk.CTkFont(size=13)
+        )
+        self.chat_textbox.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.chat_textbox.configure(state="disabled")
 
-        # Add welcome message
-        self.chat_buffer.set_text(
+        # Welcome message
+        self._append_to_chat(
             "=== Guardian - Agente LLM Offline ===\n\n"
-            "Olá! Sou o Guardian, o teu assistente AI local.\n"
+            "Ola! Sou o Guardian, o teu assistente AI local.\n"
             "Posso ajudar-te com:\n"
             "  - Pesquisar ficheiros no sistema\n"
             "  - Pesquisar na internet\n"
@@ -215,444 +240,481 @@ class MainWindow(Adw.ApplicationWindow):
             "Escreve a tua mensagem abaixo...\n\n"
         )
 
-        scroll.set_child(self.chat_view)
-        chat_box.append(scroll)
-
         # Input area
-        input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        input_frame = ctk.CTkFrame(self.tab_chat)
+        input_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        input_frame.grid_columnconfigure(0, weight=1)
 
-        self.chat_entry = Gtk.Entry()
-        self.chat_entry.set_hexpand(True)
-        self.chat_entry.set_placeholder_text("Escreve a tua mensagem...")
-        self.chat_entry.connect("activate", self._on_send_message)
+        self.chat_entry = ctk.CTkEntry(
+            input_frame,
+            placeholder_text="Escreve a tua mensagem...",
+            height=40
+        )
+        self.chat_entry.grid(row=0, column=0, padx=(10, 5), pady=10, sticky="ew")
+        self.chat_entry.bind("<Return>", self._on_send_message)
 
-        send_button = Gtk.Button(label="Enviar")
-        send_button.add_css_class("suggested-action")
-        send_button.connect("clicked", self._on_send_message)
+        send_button = ctk.CTkButton(
+            input_frame,
+            text="Enviar",
+            width=100,
+            command=self._on_send_message
+        )
+        send_button.grid(row=0, column=1, padx=5, pady=10)
 
-        clear_button = Gtk.Button(label="Limpar")
-        clear_button.connect("clicked", self._on_clear_chat)
+        clear_button = ctk.CTkButton(
+            input_frame,
+            text="Limpar",
+            width=80,
+            fg_color="gray",
+            command=self._on_clear_chat
+        )
+        clear_button.grid(row=0, column=2, padx=(5, 10), pady=10)
 
-        input_box.append(self.chat_entry)
-        input_box.append(send_button)
-        input_box.append(clear_button)
-
-        chat_box.append(input_box)
-
-        # Add tab
-        tab_label = Gtk.Label(label="Chat")
-        self.notebook.append_page(chat_box, tab_label)
+    def _append_to_chat(self, text):
+        """Adiciona texto ao chat."""
+        self.chat_textbox.configure(state="normal")
+        self.chat_textbox.insert("end", text)
+        self.chat_textbox.configure(state="disabled")
+        self.chat_textbox.see("end")
 
     def _create_blocked_ips_tab(self):
         """Cria a tab de IPs bloqueados."""
-        blocked_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        blocked_box.set_margin_start(10)
-        blocked_box.set_margin_end(10)
-        blocked_box.set_margin_top(10)
-        blocked_box.set_margin_bottom(10)
+        self.tab_blocked.grid_columnconfigure(0, weight=1)
+        self.tab_blocked.grid_rowconfigure(1, weight=1)
 
         # Header
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        header_frame = ctk.CTkFrame(self.tab_blocked)
+        header_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        header_frame.grid_columnconfigure(1, weight=1)
 
-        title = Gtk.Label(label="IPs Bloqueados")
-        title.add_css_class("title-2")
-        title.set_halign(Gtk.Align.START)
-        title.set_hexpand(True)
+        title = ctk.CTkLabel(
+            header_frame,
+            text="IPs Bloqueados",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
-        refresh_btn = Gtk.Button(label="Atualizar")
-        refresh_btn.connect("clicked", lambda _: self.refresh_blocked_ips())
+        self.blocked_stats_var = ctk.StringVar(value="Total: 0 | Permanentes: 0 | Temporarios: 0")
+        stats_label = ctk.CTkLabel(
+            header_frame,
+            textvariable=self.blocked_stats_var
+        )
+        stats_label.grid(row=0, column=1, padx=10, pady=10)
 
-        header_box.append(title)
-        header_box.append(refresh_btn)
-        blocked_box.append(header_box)
+        refresh_btn = ctk.CTkButton(
+            header_frame,
+            text="Atualizar",
+            width=100,
+            command=self.refresh_blocked_ips
+        )
+        refresh_btn.grid(row=0, column=2, padx=10, pady=10, sticky="e")
 
-        # Stats
-        self.blocked_stats = Gtk.Label(label="Total: 0 | Permanentes: 0 | Temporários: 0")
-        self.blocked_stats.set_halign(Gtk.Align.START)
-        blocked_box.append(self.blocked_stats)
+        # List frame with Treeview (using ttk for table)
+        list_frame = ctk.CTkFrame(self.tab_blocked)
+        list_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(0, weight=1)
 
-        # Separator
-        blocked_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        # Style for treeview
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#2b2b2b",
+            foreground="white",
+            fieldbackground="#2b2b2b",
+            rowheight=30
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#1f538d",
+            foreground="white",
+            font=('Helvetica', 11, 'bold')
+        )
+        style.map("Treeview", background=[("selected", "#1f538d")])
 
-        # List of blocked IPs (scrollable)
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_vexpand(True)
-        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        # Treeview
+        columns = ("IP", "Motivo", "Bloqueado em", "Status")
+        self.blocked_tree = ttk.Treeview(
+            list_frame,
+            columns=columns,
+            show="headings",
+            selectmode="browse"
+        )
 
-        # Create list store and tree view
-        # Columns: IP, Reason, Blocked At, Status
-        self.blocked_list_store = Gtk.ListStore(str, str, str, str)
-        self.blocked_tree_view = Gtk.TreeView(model=self.blocked_list_store)
+        for col in columns:
+            self.blocked_tree.heading(col, text=col)
+            self.blocked_tree.column(col, width=150 if col == "IP" else 200)
 
-        # Create columns
-        columns = [
-            ("IP", 0, 150),
-            ("Motivo", 1, 250),
-            ("Bloqueado em", 2, 180),
-            ("Status", 3, 120)
-        ]
+        self.blocked_tree.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-        for title, idx, width in columns:
-            renderer = Gtk.CellRendererText()
-            column = Gtk.TreeViewColumn(title, renderer, text=idx)
-            column.set_min_width(width)
-            column.set_resizable(True)
-            self.blocked_tree_view.append_column(column)
+        # Scrollbar
+        scrollbar = ctk.CTkScrollbar(list_frame, command=self.blocked_tree.yview)
+        scrollbar.grid(row=0, column=1, pady=10, sticky="ns")
+        self.blocked_tree.configure(yscrollcommand=scrollbar.set)
 
-        scroll.set_child(self.blocked_tree_view)
-        blocked_box.append(scroll)
+        # Actions frame
+        actions_frame = ctk.CTkFrame(self.tab_blocked)
+        actions_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="ew")
+        actions_frame.grid_columnconfigure(0, weight=1)
 
-        # Actions
-        actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.add_ip_entry = ctk.CTkEntry(
+            actions_frame,
+            placeholder_text="IP a bloquear (ex: 192.168.1.100)",
+            width=250
+        )
+        self.add_ip_entry.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
-        # Add IP
-        self.add_ip_entry = Gtk.Entry()
-        self.add_ip_entry.set_placeholder_text("IP a bloquear (ex: 192.168.1.100)")
-        self.add_ip_entry.set_hexpand(True)
+        self.add_reason_entry = ctk.CTkEntry(
+            actions_frame,
+            placeholder_text="Motivo",
+            width=200
+        )
+        self.add_reason_entry.grid(row=0, column=1, padx=5, pady=10)
 
-        self.add_reason_entry = Gtk.Entry()
-        self.add_reason_entry.set_placeholder_text("Motivo")
-        self.add_reason_entry.set_width_chars(20)
+        block_btn = ctk.CTkButton(
+            actions_frame,
+            text="Bloquear IP",
+            fg_color="#c42b1c",
+            hover_color="#a02010",
+            command=self._on_block_ip
+        )
+        block_btn.grid(row=0, column=2, padx=5, pady=10)
 
-        add_btn = Gtk.Button(label="Bloquear IP")
-        add_btn.add_css_class("destructive-action")
-        add_btn.connect("clicked", self._on_block_ip)
-
-        unblock_btn = Gtk.Button(label="Desbloquear Selecionado")
-        unblock_btn.connect("clicked", self._on_unblock_ip)
-
-        actions_box.append(self.add_ip_entry)
-        actions_box.append(self.add_reason_entry)
-        actions_box.append(add_btn)
-        actions_box.append(unblock_btn)
-
-        blocked_box.append(actions_box)
-
-        # Add tab with icon
-        tab_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
-        tab_icon = Gtk.Image.new_from_icon_name("network-server-symbolic")
-        tab_label = Gtk.Label(label="IPs Bloqueados")
-        tab_box.append(tab_icon)
-        tab_box.append(tab_label)
-
-        self.notebook.append_page(blocked_box, tab_box)
+        unblock_btn = ctk.CTkButton(
+            actions_frame,
+            text="Desbloquear Selecionado",
+            fg_color="gray",
+            command=self._on_unblock_ip
+        )
+        unblock_btn.grid(row=0, column=3, padx=10, pady=10)
 
     def _create_reasoning_tab(self):
-        """Cria a tab de histórico de raciocínio."""
-        reasoning_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        reasoning_box.set_margin_start(10)
-        reasoning_box.set_margin_end(10)
-        reasoning_box.set_margin_top(10)
-        reasoning_box.set_margin_bottom(10)
+        """Cria a tab de historico de raciocinio."""
+        self.tab_reasoning.grid_columnconfigure(0, weight=1)
+        self.tab_reasoning.grid_rowconfigure(1, weight=1)
 
         # Header
-        header = Gtk.Label(label="Histórico de Raciocínio")
-        header.add_css_class("title-2")
-        header.set_halign(Gtk.Align.START)
-        reasoning_box.append(header)
+        header_frame = ctk.CTkFrame(self.tab_reasoning)
+        header_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
 
-        # Description
-        desc = Gtk.Label(
-            label="O Guardian grava todo o seu processo de raciocínio para análise posterior."
+        title = ctk.CTkLabel(
+            header_frame,
+            text="Historico de Raciocinio",
+            font=ctk.CTkFont(size=18, weight="bold")
         )
-        desc.set_halign(Gtk.Align.START)
-        desc.set_wrap(True)
-        reasoning_box.append(desc)
+        title.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
-        reasoning_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        desc = ctk.CTkLabel(
+            header_frame,
+            text="O Guardian grava todo o seu processo de raciocinio para analise posterior.",
+            text_color="gray"
+        )
+        desc.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="w")
 
-        # Sessions list
-        sessions_scroll = Gtk.ScrolledWindow()
-        sessions_scroll.set_vexpand(True)
-
-        self.reasoning_view = Gtk.TextView()
-        self.reasoning_view.set_editable(False)
-        self.reasoning_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.reasoning_view.set_left_margin(10)
-        self.reasoning_view.set_right_margin(10)
-        self.reasoning_buffer = self.reasoning_view.get_buffer()
-        self.reasoning_buffer.set_text("Nenhuma sessão de raciocínio ainda.\n\nO raciocínio será gravado automaticamente durante as interações.")
-
-        sessions_scroll.set_child(self.reasoning_view)
-        reasoning_box.append(sessions_scroll)
+        # Reasoning textbox
+        self.reasoning_textbox = ctk.CTkTextbox(
+            self.tab_reasoning,
+            wrap="word",
+            font=ctk.CTkFont(size=12)
+        )
+        self.reasoning_textbox.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.reasoning_textbox.insert(
+            "1.0",
+            "Nenhuma sessao de raciocinio ainda.\n\n"
+            "O raciocinio sera gravado automaticamente durante as interacoes."
+        )
+        self.reasoning_textbox.configure(state="disabled")
 
         # Buttons
-        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_frame = ctk.CTkFrame(self.tab_reasoning)
+        btn_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="ew")
 
-        refresh_btn = Gtk.Button(label="Atualizar")
-        refresh_btn.connect("clicked", self._on_refresh_reasoning)
+        refresh_btn = ctk.CTkButton(
+            btn_frame,
+            text="Atualizar",
+            width=100,
+            command=self._on_refresh_reasoning
+        )
+        refresh_btn.grid(row=0, column=0, padx=10, pady=10)
 
-        clear_btn = Gtk.Button(label="Limpar Histórico")
-        clear_btn.connect("clicked", self._on_clear_reasoning)
-
-        btn_box.append(refresh_btn)
-        btn_box.append(clear_btn)
-        reasoning_box.append(btn_box)
-
-        # Add tab
-        tab_label = Gtk.Label(label="Raciocínio")
-        self.notebook.append_page(reasoning_box, tab_label)
+        clear_btn = ctk.CTkButton(
+            btn_frame,
+            text="Limpar Historico",
+            width=120,
+            fg_color="gray",
+            command=self._on_clear_reasoning
+        )
+        clear_btn.grid(row=0, column=1, padx=5, pady=10)
 
     def _create_tools_tab(self):
         """Cria a tab de ferramentas."""
-        tools_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        tools_box.set_margin_start(10)
-        tools_box.set_margin_end(10)
-        tools_box.set_margin_top(10)
-        tools_box.set_margin_bottom(10)
-
-        # Header
-        header = Gtk.Label(label="Ferramentas")
-        header.add_css_class("title-2")
-        header.set_halign(Gtk.Align.START)
-        tools_box.append(header)
+        self.tab_tools.grid_columnconfigure(0, weight=1)
+        self.tab_tools.grid_rowconfigure(2, weight=1)
 
         # File Search Section
-        file_frame = Gtk.Frame(label="Pesquisa de Ficheiros")
-        file_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        file_box.set_margin_start(10)
-        file_box.set_margin_end(10)
-        file_box.set_margin_top(10)
-        file_box.set_margin_bottom(10)
+        file_frame = ctk.CTkFrame(self.tab_tools)
+        file_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        file_frame.grid_columnconfigure(1, weight=1)
 
-        file_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        file_title = ctk.CTkLabel(
+            file_frame,
+            text="Pesquisa de Ficheiros",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        file_title.grid(row=0, column=0, columnspan=4, padx=10, pady=(10, 5), sticky="w")
 
-        self.file_query_entry = Gtk.Entry()
-        self.file_query_entry.set_placeholder_text("Nome do ficheiro...")
-        self.file_query_entry.set_hexpand(True)
+        self.file_query_entry = ctk.CTkEntry(
+            file_frame,
+            placeholder_text="Nome do ficheiro..."
+        )
+        self.file_query_entry.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
 
-        self.file_path_entry = Gtk.Entry()
-        self.file_path_entry.set_placeholder_text("Caminho (default: ~)")
-        self.file_path_entry.set_width_chars(20)
+        self.file_path_entry = ctk.CTkEntry(
+            file_frame,
+            placeholder_text="Caminho (default: ~)",
+            width=200
+        )
+        self.file_path_entry.grid(row=1, column=1, padx=5, pady=10)
 
-        file_search_btn = Gtk.Button(label="Pesquisar")
-        file_search_btn.connect("clicked", self._on_file_search)
-
-        file_input_box.append(self.file_query_entry)
-        file_input_box.append(self.file_path_entry)
-        file_input_box.append(file_search_btn)
-
-        file_box.append(file_input_box)
-        file_frame.set_child(file_box)
-        tools_box.append(file_frame)
+        file_search_btn = ctk.CTkButton(
+            file_frame,
+            text="Pesquisar",
+            width=100,
+            command=self._on_file_search
+        )
+        file_search_btn.grid(row=1, column=2, padx=10, pady=10)
 
         # Web Search Section
-        web_frame = Gtk.Frame(label="Pesquisa na Internet")
-        web_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        web_box.set_margin_start(10)
-        web_box.set_margin_end(10)
-        web_box.set_margin_top(10)
-        web_box.set_margin_bottom(10)
+        web_frame = ctk.CTkFrame(self.tab_tools)
+        web_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="ew")
+        web_frame.grid_columnconfigure(0, weight=1)
 
-        web_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        web_title = ctk.CTkLabel(
+            web_frame,
+            text="Pesquisa na Internet",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        web_title.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
 
-        self.web_query_entry = Gtk.Entry()
-        self.web_query_entry.set_placeholder_text("Termo de pesquisa...")
-        self.web_query_entry.set_hexpand(True)
+        self.web_query_entry = ctk.CTkEntry(
+            web_frame,
+            placeholder_text="Termo de pesquisa..."
+        )
+        self.web_query_entry.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
 
-        web_search_btn = Gtk.Button(label="Pesquisar")
-        web_search_btn.connect("clicked", self._on_web_search)
-
-        web_input_box.append(self.web_query_entry)
-        web_input_box.append(web_search_btn)
-
-        web_box.append(web_input_box)
-        web_frame.set_child(web_box)
-        tools_box.append(web_frame)
+        web_search_btn = ctk.CTkButton(
+            web_frame,
+            text="Pesquisar",
+            width=100,
+            command=self._on_web_search
+        )
+        web_search_btn.grid(row=1, column=1, padx=10, pady=10)
 
         # Results area
-        results_frame = Gtk.Frame(label="Resultados")
-        results_scroll = Gtk.ScrolledWindow()
-        results_scroll.set_vexpand(True)
-        results_scroll.set_min_content_height(200)
+        results_frame = ctk.CTkFrame(self.tab_tools)
+        results_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        results_frame.grid_columnconfigure(0, weight=1)
+        results_frame.grid_rowconfigure(1, weight=1)
 
-        self.tools_results_view = Gtk.TextView()
-        self.tools_results_view.set_editable(False)
-        self.tools_results_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.tools_results_view.set_left_margin(10)
-        self.tools_results_buffer = self.tools_results_view.get_buffer()
-        self.tools_results_buffer.set_text("Os resultados das pesquisas aparecerão aqui...")
+        results_title = ctk.CTkLabel(
+            results_frame,
+            text="Resultados",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        results_title.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
-        results_scroll.set_child(self.tools_results_view)
-        results_frame.set_child(results_scroll)
-        tools_box.append(results_frame)
-
-        # Add tab
-        tab_label = Gtk.Label(label="Ferramentas")
-        self.notebook.append_page(tools_box, tab_label)
+        self.tools_results_textbox = ctk.CTkTextbox(
+            results_frame,
+            wrap="word",
+            font=ctk.CTkFont(size=12)
+        )
+        self.tools_results_textbox.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.tools_results_textbox.insert("1.0", "Os resultados das pesquisas aparecerao aqui...")
+        self.tools_results_textbox.configure(state="disabled")
 
     # Event handlers
-    def _on_send_message(self, widget):
+    def _on_send_message(self, event=None):
         """Envia mensagem para o agente."""
-        message = self.chat_entry.get_text().strip()
+        message = self.chat_entry.get().strip()
         if not message or not self.app_ref:
             return
 
-        self.chat_entry.set_text("")
-        self.chat_entry.set_sensitive(False)
+        self.chat_entry.delete(0, "end")
+        self.chat_entry.configure(state="disabled")
 
-        # Add user message to chat
-        end_iter = self.chat_buffer.get_end_iter()
-        self.chat_buffer.insert(end_iter, f"\n[Utilizador]: {message}\n")
-        self.chat_buffer.insert(end_iter, "\n[Guardian]: A pensar...\n")
+        self._append_to_chat(f"\n[Utilizador]: {message}\n")
+        self._append_to_chat("\n[Guardian]: A pensar...\n")
 
-        self.status_bar.set_text("A processar...")
+        self.status_var.set("A processar...")
 
-        # Process in background thread
         def process():
             try:
                 response = self.app_ref.agent.think(message)
-                GLib.idle_add(self._update_chat_response, response)
+                self.after(0, lambda: self._update_chat_response(response))
             except Exception as e:
-                GLib.idle_add(self._update_chat_response, f"Erro: {str(e)}")
+                self.after(0, lambda: self._update_chat_response(f"Erro: {str(e)}"))
 
         thread = threading.Thread(target=process, daemon=True)
         thread.start()
 
     def _update_chat_response(self, response):
         """Atualiza a resposta no chat."""
-        # Remove "A pensar..."
-        end_iter = self.chat_buffer.get_end_iter()
-        start_iter = self.chat_buffer.get_iter_at_offset(
-            self.chat_buffer.get_char_count() - len("[Guardian]: A pensar...\n")
-        )
-        self.chat_buffer.delete(start_iter, end_iter)
+        self.chat_textbox.configure(state="normal")
 
-        # Add response
-        end_iter = self.chat_buffer.get_end_iter()
-        self.chat_buffer.insert(end_iter, f"[Guardian]: {response}\n")
+        # Get all text and remove "A pensar..."
+        content = self.chat_textbox.get("1.0", "end")
+        thinking_msg = "[Guardian]: A pensar...\n"
+        if thinking_msg in content:
+            idx = content.rfind(thinking_msg)
+            if idx >= 0:
+                # Calculate line position
+                lines_before = content[:idx].count('\n') + 1
+                self.chat_textbox.delete(f"{lines_before}.0", f"{lines_before + 1}.0")
 
-        # Scroll to bottom
-        self.chat_view.scroll_to_iter(self.chat_buffer.get_end_iter(), 0, False, 0, 0)
+        self.chat_textbox.configure(state="disabled")
+        self._append_to_chat(f"[Guardian]: {response}\n")
 
-        self.chat_entry.set_sensitive(True)
-        self.chat_entry.grab_focus()
-        self.status_bar.set_text("Pronto")
+        self.chat_entry.configure(state="normal")
+        self.chat_entry.focus()
+        self.status_var.set("Pronto")
 
-        # Update reasoning
-        self._on_refresh_reasoning(None)
+        self._on_refresh_reasoning()
 
-    def _on_clear_chat(self, widget):
-        """Limpa o histórico de chat."""
+    def _on_clear_chat(self):
+        """Limpa o historico de chat."""
         if self.app_ref:
             self.app_ref.agent.clear_history()
-        self.chat_buffer.set_text(
-            "=== Chat limpo ===\n\nEscreve a tua mensagem abaixo...\n\n"
-        )
+
+        self.chat_textbox.configure(state="normal")
+        self.chat_textbox.delete("1.0", "end")
+        self.chat_textbox.insert("1.0", "=== Chat limpo ===\n\nEscreve a tua mensagem abaixo...\n\n")
+        self.chat_textbox.configure(state="disabled")
 
     def refresh_blocked_ips(self):
         """Atualiza a lista de IPs bloqueados."""
         if not self.app_ref:
             return
 
-        self.blocked_list_store.clear()
+        # Clear existing items
+        for item in self.blocked_tree.get_children():
+            self.blocked_tree.delete(item)
+
         blocked = self.app_ref.firewall.list_blocked()
 
         for entry in blocked:
             status = "Permanente" if entry.get("is_permanent") else f"Expira: {entry.get('expires_at', 'N/A')}"
-            self.blocked_list_store.append([
+            self.blocked_tree.insert("", "end", values=(
                 entry.get("ip", ""),
                 entry.get("reason", ""),
                 entry.get("blocked_at", "")[:19] if entry.get("blocked_at") else "",
                 status
-            ])
+            ))
 
         # Update stats
         stats = self.app_ref.firewall.get_statistics()
-        self.blocked_stats.set_text(
+        self.blocked_stats_var.set(
             f"Total: {stats['total_blocked']} | "
             f"Permanentes: {stats['permanent']} | "
-            f"Temporários: {stats['temporary']}"
+            f"Temporarios: {stats['temporary']}"
         )
 
-    def _on_block_ip(self, widget):
+    def _on_block_ip(self):
         """Bloqueia um IP."""
         if not self.app_ref:
             return
 
-        ip = self.add_ip_entry.get_text().strip()
-        reason = self.add_reason_entry.get_text().strip() or "Bloqueio manual"
+        ip = self.add_ip_entry.get().strip()
+        reason = self.add_reason_entry.get().strip() or "Bloqueio manual"
 
         if not ip:
-            self.status_bar.set_text("Erro: IP não pode estar vazio")
+            self.status_var.set("Erro: IP nao pode estar vazio")
             return
 
         result = self.app_ref.firewall.block_ip(ip, reason)
 
         if result["success"]:
-            self.add_ip_entry.set_text("")
-            self.add_reason_entry.set_text("")
+            self.add_ip_entry.delete(0, "end")
+            self.add_reason_entry.delete(0, "end")
             self.refresh_blocked_ips()
-            self.status_bar.set_text(f"IP {ip} bloqueado com sucesso")
+            self.status_var.set(f"IP {ip} bloqueado com sucesso")
         else:
-            self.status_bar.set_text(f"Erro: {result.get('error', 'Desconhecido')}")
+            self.status_var.set(f"Erro: {result.get('error', 'Desconhecido')}")
 
-    def _on_unblock_ip(self, widget):
+    def _on_unblock_ip(self):
         """Desbloqueia o IP selecionado."""
         if not self.app_ref:
             return
 
-        selection = self.blocked_tree_view.get_selection()
-        model, iter = selection.get_selected()
-
-        if iter is None:
-            self.status_bar.set_text("Seleciona um IP para desbloquear")
+        selection = self.blocked_tree.selection()
+        if not selection:
+            self.status_var.set("Seleciona um IP para desbloquear")
             return
 
-        ip = model.get_value(iter, 0)
+        item = selection[0]
+        ip = self.blocked_tree.item(item, "values")[0]
+
         result = self.app_ref.firewall.unblock_ip(ip)
 
         if result["success"]:
             self.refresh_blocked_ips()
-            self.status_bar.set_text(f"IP {ip} desbloqueado com sucesso")
+            self.status_var.set(f"IP {ip} desbloqueado com sucesso")
         else:
-            self.status_bar.set_text(f"Erro: {result.get('error', 'Desconhecido')}")
+            self.status_var.set(f"Erro: {result.get('error', 'Desconhecido')}")
 
-    def _on_refresh_reasoning(self, widget):
-        """Atualiza o histórico de raciocínio."""
+    def _on_refresh_reasoning(self):
+        """Atualiza o historico de raciocinio."""
         if not self.app_ref:
             return
 
         sessions = self.app_ref.reasoning_engine.list_sessions()
 
+        self.reasoning_textbox.configure(state="normal")
+        self.reasoning_textbox.delete("1.0", "end")
+
         if not sessions:
-            self.reasoning_buffer.set_text(
-                "Nenhuma sessão de raciocínio gravada.\n\n"
-                "O raciocínio será gravado automaticamente durante as interações."
+            self.reasoning_textbox.insert(
+                "1.0",
+                "Nenhuma sessao de raciocinio gravada.\n\n"
+                "O raciocinio sera gravado automaticamente durante as interacoes."
             )
-            return
+        else:
+            text = f"=== {len(sessions)} Sessoes de Raciocinio ===\n\n"
 
-        text = f"=== {len(sessions)} Sessões de Raciocínio ===\n\n"
+            for session in sessions[:10]:
+                text += f"Sessao: {session['session_id']}\n"
+                text += f"  Passos: {session['total_steps']}\n"
+                text += f"  Ficheiro: {session['file']}\n\n"
 
-        for session in sessions[:10]:  # Show last 10
-            text += f"Sessão: {session['session_id']}\n"
-            text += f"  Passos: {session['total_steps']}\n"
-            text += f"  Ficheiro: {session['file']}\n\n"
+            if self.app_ref.reasoning_engine.current_session:
+                text += "\n=== Sessao Atual ===\n"
+                text += self.app_ref.reasoning_engine.get_reasoning_chain()
 
-        # Show current session if available
-        if self.app_ref.reasoning_engine.current_session:
-            text += "\n=== Sessão Atual ===\n"
-            text += self.app_ref.reasoning_engine.get_reasoning_chain()
+            self.reasoning_textbox.insert("1.0", text)
 
-        self.reasoning_buffer.set_text(text)
+        self.reasoning_textbox.configure(state="disabled")
 
-    def _on_clear_reasoning(self, widget):
-        """Limpa o histórico de raciocínio."""
+    def _on_clear_reasoning(self):
+        """Limpa o historico de raciocinio."""
         if self.app_ref:
             self.app_ref.reasoning_engine.current_session = []
-        self.reasoning_buffer.set_text("Histórico limpo.")
 
-    def _on_file_search(self, widget):
+        self.reasoning_textbox.configure(state="normal")
+        self.reasoning_textbox.delete("1.0", "end")
+        self.reasoning_textbox.insert("1.0", "Historico limpo.")
+        self.reasoning_textbox.configure(state="disabled")
+
+    def _on_file_search(self):
         """Executa pesquisa de ficheiros."""
-        query = self.file_query_entry.get_text().strip()
-        path = self.file_path_entry.get_text().strip() or "~"
+        query = self.file_query_entry.get().strip()
+        path = self.file_path_entry.get().strip() or "~"
 
         if not query:
-            self.tools_results_buffer.set_text("Erro: Query não pode estar vazia")
+            self._update_tools_results("Erro: Query nao pode estar vazia")
             return
 
-        self.tools_results_buffer.set_text("A pesquisar...")
-        self.status_bar.set_text("A pesquisar ficheiros...")
+        self._update_tools_results("A pesquisar...")
+        self.status_var.set("A pesquisar ficheiros...")
 
         def search():
             tool = FileSearchTool({})
@@ -670,22 +732,22 @@ class MainWindow(Adw.ApplicationWindow):
                     output.append(f"  Tamanho: {r.get('size_human', 'N/A')}\n")
                     output.append(f"  Modificado: {r.get('modified', 'N/A')}\n\n")
 
-            GLib.idle_add(self.tools_results_buffer.set_text, "".join(output))
-            GLib.idle_add(self.status_bar.set_text, "Pesquisa concluída")
+            self.after(0, lambda: self._update_tools_results("".join(output)))
+            self.after(0, lambda: self.status_var.set("Pesquisa concluida"))
 
         thread = threading.Thread(target=search, daemon=True)
         thread.start()
 
-    def _on_web_search(self, widget):
+    def _on_web_search(self):
         """Executa pesquisa na web."""
-        query = self.web_query_entry.get_text().strip()
+        query = self.web_query_entry.get().strip()
 
         if not query:
-            self.tools_results_buffer.set_text("Erro: Query não pode estar vazia")
+            self._update_tools_results("Erro: Query nao pode estar vazia")
             return
 
-        self.tools_results_buffer.set_text("A pesquisar na internet...")
-        self.status_bar.set_text("A pesquisar na web...")
+        self._update_tools_results("A pesquisar na internet...")
+        self.status_var.set("A pesquisar na web...")
 
         def search():
             tool = WebSearchTool({"max_results": 10})
@@ -705,17 +767,25 @@ class MainWindow(Adw.ApplicationWindow):
                         output.append(f"   {desc}...\n")
                     output.append("\n")
 
-            GLib.idle_add(self.tools_results_buffer.set_text, "".join(output))
-            GLib.idle_add(self.status_bar.set_text, "Pesquisa concluída")
+            self.after(0, lambda: self._update_tools_results("".join(output)))
+            self.after(0, lambda: self.status_var.set("Pesquisa concluida"))
 
         thread = threading.Thread(target=search, daemon=True)
         thread.start()
 
+    def _update_tools_results(self, text):
+        """Atualiza a area de resultados."""
+        self.tools_results_textbox.configure(state="normal")
+        self.tools_results_textbox.delete("1.0", "end")
+        self.tools_results_textbox.insert("1.0", text)
+        self.tools_results_textbox.configure(state="disabled")
+
 
 def run_app():
-    """Função para executar a aplicação."""
+    """Funcao para executar a aplicacao."""
     app = GuardianApp()
-    return app.run(None)
+    app.run()
+    return 0
 
 
 if __name__ == "__main__":
