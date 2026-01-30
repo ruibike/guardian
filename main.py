@@ -214,14 +214,14 @@ def run_cli(config: dict):
 
 
 def run_gui():
-    """Executa o Guardian com interface gráfica."""
+    """Executa o Guardian com interface grafica (CustomTkinter)."""
     try:
         from ui.main_window import run_app
         return run_app()
     except ImportError as e:
-        print(f"[ERRO] Não foi possível carregar a interface gráfica: {e}")
-        print("\nRequisitos GTK4:")
-        print("  sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 libadwaita-1-dev")
+        print(f"[ERRO] Nao foi possivel carregar a interface grafica: {e}")
+        print("\nInstale as dependencias:")
+        print("  pip install customtkinter")
         print("\nOu execute em modo CLI:")
         print("  python main.py --cli")
         sys.exit(1)
