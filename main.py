@@ -70,24 +70,29 @@ def load_config() -> dict:
 def run_cli(config: dict):
     """Executa o Guardian em modo CLI."""
     from agent.llm_agent import GuardianAgent
+    from agent.instructions import get_help_message
     from tools.firewall import block_ip, unblock_ip, list_blocked_ips
     from tools.file_search import file_search
     from tools.web_search import web_search
+    from tools.network_monitor import scan_network, get_suspicious
 
-    print("=" * 60)
-    print("  Guardian - Agente LLM Offline (Modo CLI)")
-    print("  Otimizado para 8GB RAM")
-    print("=" * 60)
+    # Banner
+    print("\033[94m")
+    print("╔═══════════════════════════════════════════════════════════╗")
+    print("║                                                           ║")
+    print("║   ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗ ██╗ █████╗ ███╗   ██╗  ║")
+    print("║  ██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗██║██╔══██╗████╗  ██║  ║")
+    print("║  ██║  ███╗██║   ██║███████║██████╔╝██║  ██║██║███████║██╔██╗ ██║  ║")
+    print("║  ██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║██║██╔══██║██║╚██╗██║  ║")
+    print("║  ╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝██║██║  ██║██║ ╚████║  ║")
+    print("║   ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝  ║")
+    print("║                                                           ║")
+    print("║          Agente LLM Offline - Otimizado 8GB RAM           ║")
+    print("╚═══════════════════════════════════════════════════════════╝")
+    print("\033[0m")
     print()
-    print("Comandos especiais:")
-    print("  /quit, /exit  - Sair")
-    print("  /clear        - Limpar histórico")
-    print("  /blocked      - Listar IPs bloqueados")
-    print("  /block <ip>   - Bloquear IP")
-    print("  /unblock <ip> - Desbloquear IP")
-    print("  /search <q>   - Pesquisar ficheiros")
-    print("  /web <q>      - Pesquisar na internet")
-    print("  /help         - Mostrar ajuda")
+    print("Comandos rápidos: /help para ver todos | /quit para sair")
+    print("-" * 60)
     print()
 
     # Initialize agent with tools
@@ -97,6 +102,8 @@ def run_cli(config: dict):
         "block_ip": block_ip,
         "unblock_ip": unblock_ip,
         "list_blocked_ips": list_blocked_ips,
+        "scan_network": scan_network,
+        "get_suspicious": get_suspicious,
     }
 
     agent = GuardianAgent(config, tools)
@@ -143,19 +150,53 @@ def run_cli(config: dict):
                 print(web_search(query))
                 continue
 
+            elif user_input.lower() in ['/scan', '/network', '/rede']:
+                print("\n[Guardian]: A analisar conexões de rede...\n")
+                print(scan_network())
+                continue
+
+            elif user_input.lower() in ['/suspicious', '/suspeitos']:
+                print("\n[Guardian]: A verificar IPs suspeitos...\n")
+                print(get_suspicious())
+                continue
+
+            elif user_input.lower() in ['/about', '/sobre']:
+                print(get_help_message("about"))
+                continue
+
             elif user_input.lower() == '/help':
                 print("""
-Comandos disponíveis:
-  /quit, /exit  - Sair do Guardian
-  /clear        - Limpar histórico de conversação
-  /blocked      - Listar IPs bloqueados
-  /block <ip>   - Bloquear um IP
-  /unblock <ip> - Desbloquear um IP
-  /search <q>   - Pesquisar ficheiros por nome
-  /web <q>      - Pesquisar na internet
-  /help         - Mostrar esta ajuda
-
-Ou simplesmente escreve a tua pergunta para o agente.
+╔═══════════════════════════════════════════════════════════╗
+║                   COMANDOS GUARDIAN                       ║
+╠═══════════════════════════════════════════════════════════╣
+║                                                           ║
+║  NAVEGAÇÃO                                                ║
+║    /quit, /exit     Sair do Guardian                      ║
+║    /clear           Limpar histórico de conversação       ║
+║    /help            Mostrar esta ajuda                    ║
+║    /about           Sobre o Guardian                      ║
+║                                                           ║
+║  FIREWALL                                                 ║
+║    /blocked         Listar IPs bloqueados                 ║
+║    /block <ip>      Bloquear um IP                        ║
+║    /unblock <ip>    Desbloquear um IP                     ║
+║                                                           ║
+║  PESQUISA                                                 ║
+║    /search <query>  Pesquisar ficheiros por nome          ║
+║    /web <query>     Pesquisar na internet (DuckDuckGo)    ║
+║                                                           ║
+║  SEGURANÇA                                                ║
+║    /scan            Analisar conexões de rede             ║
+║    /suspicious      Mostrar IPs suspeitos                 ║
+║                                                           ║
+╠═══════════════════════════════════════════════════════════╣
+║                                                           ║
+║  Podes também conversar naturalmente com o agente:        ║
+║  > "bloqueia o IP 192.168.1.100"                          ║
+║  > "pesquisa ficheiros de configuração"                   ║
+║  > "verifica a segurança do sistema"                      ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
                 """)
                 continue
 

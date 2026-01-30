@@ -16,6 +16,18 @@ try:
 except ImportError:
     LLAMA_AVAILABLE = False
 
+# Import instructions
+try:
+    from .instructions import get_system_prompt, get_help_message, get_task_prompt
+except ImportError:
+    # Fallback if instructions not available
+    def get_system_prompt():
+        return "Tu és o Guardian, um agente AI autónomo."
+    def get_help_message(topic="welcome"):
+        return "Guardian - Agente LLM Offline"
+    def get_task_prompt(task):
+        return ""
+
 
 class GuardianAgent:
     """
@@ -32,34 +44,8 @@ class GuardianAgent:
         self.conversation_history = []
         self.reasoning_log = []
 
-        # System prompt for autonomous reasoning
-        self.system_prompt = """Tu és o Guardian, um agente AI autónomo a correr localmente.
-Tens capacidade de:
-1. RACIOCINAR passo a passo sobre problemas
-2. PESQUISAR ficheiros no sistema Ubuntu
-3. PESQUISAR informação na internet
-4. BLOQUEAR IPs suspeitos no firewall
-5. EXECUTAR comandos de sistema quando necessário
-
-Quando recebes uma tarefa:
-1. Primeiro, PENSA sobre o que precisas fazer
-2. Decide que FERRAMENTAS usar
-3. EXECUTA as ações necessárias
-4. VERIFICA os resultados
-5. REPORTA ao utilizador
-
-Para usar ferramentas, usa o formato:
-[TOOL:nome_ferramenta]{"param": "valor"}[/TOOL]
-
-Ferramentas disponíveis:
-- file_search: Pesquisa ficheiros. Params: {"query": "texto", "path": "/caminho"}
-- web_search: Pesquisa na internet. Params: {"query": "pesquisa"}
-- block_ip: Bloqueia um IP. Params: {"ip": "x.x.x.x", "reason": "motivo"}
-- unblock_ip: Desbloqueia um IP. Params: {"ip": "x.x.x.x"}
-- list_blocked_ips: Lista IPs bloqueados. Params: {}
-- run_command: Executa comando. Params: {"command": "cmd"}
-
-Pensa sempre em voz alta mostrando o teu raciocínio."""
+        # Load system prompt from instructions
+        self.system_prompt = get_system_prompt()
 
     def initialize(self) -> bool:
         """Inicializa o modelo LLM."""
@@ -217,64 +203,198 @@ Pensa sempre em voz alta mostrando o teu raciocínio."""
         """Resposta simulada quando não há modelo carregado."""
         message_lower = user_message.lower()
 
+        # Bloquear IP
         if "ip" in message_lower and ("bloquear" in message_lower or "block" in message_lower):
             ip_match = re.search(r'\d+\.\d+\.\d+\.\d+', user_message)
             if ip_match:
                 ip = ip_match.group()
-                return f"""**Raciocínio do Guardian:**
+                return f"""## Raciocínio do Guardian
 
-1. O utilizador quer bloquear o IP {ip}
-2. Vou verificar se é um IP válido... ✓
-3. Vou usar a ferramenta de firewall
+### Passo 1: OBSERVAR
+O utilizador pediu para bloquear o IP {ip}.
+
+### Passo 2: ANALISAR
+- IP fornecido: {ip}
+- Verificar se é um IP válido: ✓
+- Verificar se não é IP local (127.x.x.x, 192.168.x.x): {"⚠️ É IP privado!" if ip.startswith(("127.", "192.168.", "10.")) else "✓ É IP público"}
+
+### Passo 3: EXECUTAR
+Vou adicionar este IP à lista de bloqueio.
 
 [TOOL:block_ip]{{"ip": "{ip}", "reason": "Bloqueio manual pelo utilizador"}}[/TOOL]
 
-Pronto! O IP {ip} foi adicionado à lista de bloqueio."""
+### Passo 4: REPORTAR
+O IP {ip} foi adicionado à lista de bloqueio do Guardian.
+Podes ver todos os IPs bloqueados no separador "IPs Bloqueados" ou usando `/blocked`."""
 
-        if "pesquis" in message_lower or "search" in message_lower or "encontr" in message_lower:
-            if "ficheiro" in message_lower or "file" in message_lower:
-                return """**Raciocínio do Guardian:**
+        # Desbloquear IP
+        if "ip" in message_lower and ("desbloquear" in message_lower or "unblock" in message_lower):
+            ip_match = re.search(r'\d+\.\d+\.\d+\.\d+', user_message)
+            if ip_match:
+                ip = ip_match.group()
+                return f"""## Raciocínio do Guardian
 
-1. O utilizador quer pesquisar ficheiros
-2. Vou usar a ferramenta de pesquisa de ficheiros
+### Passo 1: OBSERVAR
+O utilizador quer desbloquear o IP {ip}.
 
-[TOOL:file_search]{"query": "config", "path": "~"}[/TOOL]
+### Passo 2: EXECUTAR
+[TOOL:unblock_ip]{{"ip": "{ip}"}}[/TOOL]
 
-A pesquisar ficheiros no sistema..."""
+### Passo 3: REPORTAR
+O IP {ip} foi removido da lista de bloqueio."""
 
-            return """**Raciocínio do Guardian:**
+        # Listar IPs bloqueados
+        if "bloqueados" in message_lower or "blocked" in message_lower or "lista" in message_lower:
+            return """## Raciocínio do Guardian
 
-1. O utilizador quer pesquisar na internet
-2. Vou usar o DuckDuckGo para privacidade
+### Passo 1: OBSERVAR
+O utilizador quer ver os IPs bloqueados.
 
-[TOOL:web_search]{"query": "informação solicitada"}[/TOOL]
-
-A pesquisar na web..."""
-
-        if "bloqueados" in message_lower or "blocked" in message_lower:
-            return """**Raciocínio do Guardian:**
-
-1. O utilizador quer ver os IPs bloqueados
-2. Vou consultar a lista de firewall
+### Passo 2: EXECUTAR
+Vou consultar a lista de firewall.
 
 [TOOL:list_blocked_ips]{}[/TOOL]
 
-A obter lista de IPs bloqueados..."""
+### Passo 3: REPORTAR
+Acima está a lista de todos os IPs atualmente bloqueados.
+Podes também ver esta informação no separador "IPs Bloqueados" da interface."""
 
-        return f"""**Raciocínio do Guardian:**
+        # Pesquisa de ficheiros
+        if ("pesquis" in message_lower or "search" in message_lower or "encontr" in message_lower or "procur" in message_lower) and \
+           ("ficheiro" in message_lower or "file" in message_lower or "arquivo" in message_lower):
+            # Extrair query se possível
+            query = "config"
+            words = user_message.split()
+            for i, word in enumerate(words):
+                if word.lower() in ["ficheiro", "file", "arquivo", "chamado", "nome"]:
+                    if i + 1 < len(words):
+                        query = words[i + 1].strip("\"'")
+                        break
 
-1. Recebi a mensagem: "{user_message}"
-2. A analisar o pedido...
-3. Processando...
+            return f"""## Raciocínio do Guardian
 
-Olá! Sou o Guardian, o teu agente AI local.
+### Passo 1: OBSERVAR
+O utilizador quer pesquisar ficheiros no sistema.
+
+### Passo 2: ANALISAR
+- Termo de pesquisa identificado: "{query}"
+- Vou pesquisar no diretório home por defeito
+
+### Passo 3: EXECUTAR
+[TOOL:file_search]{{"query": "{query}", "path": "~"}}[/TOOL]
+
+### Passo 4: REPORTAR
+Os resultados da pesquisa estão acima.
+Dica: Podes especificar um caminho diferente, ex: "pesquisa config em /etc" """
+
+        # Pesquisa na internet
+        if "pesquis" in message_lower or "search" in message_lower or "internet" in message_lower or "web" in message_lower:
+            # Extrair query
+            query = user_message
+            for prefix in ["pesquisa", "procura", "search", "pesquisar", "procurar"]:
+                if prefix in message_lower:
+                    idx = message_lower.find(prefix) + len(prefix)
+                    query = user_message[idx:].strip()
+                    break
+
+            return f"""## Raciocínio do Guardian
+
+### Passo 1: OBSERVAR
+O utilizador quer pesquisar na internet.
+
+### Passo 2: ANALISAR
+- Termo de pesquisa: "{query}"
+- Vou usar DuckDuckGo para manter privacidade
+
+### Passo 3: EXECUTAR
+[TOOL:web_search]{{"query": "{query}"}}[/TOOL]
+
+### Passo 4: REPORTAR
+Os resultados da pesquisa web estão acima."""
+
+        # Scan de rede
+        if "rede" in message_lower or "network" in message_lower or "conexões" in message_lower or "conexoes" in message_lower:
+            return """## Raciocínio do Guardian
+
+### Passo 1: OBSERVAR
+O utilizador quer analisar a rede/conexões.
+
+### Passo 2: ANALISAR
+Vou verificar:
+- Conexões ativas
+- IPs externos
+- Portas suspeitas
+- Padrões de ataque
+
+### Passo 3: EXECUTAR
+[TOOL:scan_network]{}[/TOOL]
+
+### Passo 4: REPORTAR
+A análise de rede está completa. Se foram encontrados IPs suspeitos,
+considera bloqueá-los usando: `/block <ip>`"""
+
+        # Segurança/scan
+        if "segurança" in message_lower or "security" in message_lower or "scan" in message_lower or "verificar" in message_lower:
+            return """## Raciocínio do Guardian
+
+### Passo 1: OBSERVAR
+O utilizador quer uma análise de segurança.
+
+### Passo 2: PLANEAR
+Vou verificar:
+1. Conexões de rede suspeitas
+2. IPs atualmente bloqueados
+3. Recomendar ações
+
+### Passo 3: EXECUTAR
+[TOOL:scan_network]{}[/TOOL]
+
+[TOOL:list_blocked_ips]{}[/TOOL]
+
+### Passo 4: REPORTAR
+Análise de segurança completa.
+Recomendações baseadas nos resultados acima:
+- Bloqueia IPs suspeitos identificados
+- Verifica logs de autenticação em /var/log/auth.log
+- Mantém o sistema atualizado com: sudo apt update && sudo apt upgrade"""
+
+        # Ajuda
+        if "ajuda" in message_lower or "help" in message_lower or "comandos" in message_lower:
+            return get_help_message("commands")
+
+        # Sobre
+        if "sobre" in message_lower or "about" in message_lower or "quem" in message_lower:
+            return get_help_message("about")
+
+        # Resposta genérica
+        return f"""## Raciocínio do Guardian
+
+### Passo 1: OBSERVAR
+Recebi a mensagem: "{user_message}"
+
+### Passo 2: ANALISAR
+A analisar o pedido para determinar a melhor forma de ajudar...
+
+### Passo 3: RESPONDER
+Olá! Sou o **Guardian**, o teu agente AI local de segurança.
+
 Posso ajudar-te com:
-- 🔍 Pesquisar ficheiros no sistema
-- 🌐 Pesquisar na internet
-- 🛡️ Gerir o firewall (bloquear/desbloquear IPs)
-- 💭 Raciocinar sobre problemas
+- **Pesquisar ficheiros**: "pesquisa ficheiro config"
+- **Pesquisar na web**: "pesquisa na internet como configurar firewall"
+- **Bloquear IPs**: "bloqueia o IP 1.2.3.4"
+- **Ver IPs bloqueados**: "mostra IPs bloqueados"
+- **Analisar rede**: "verifica conexões de rede"
+- **Scan de segurança**: "faz um scan de segurança"
 
-Em que posso ajudar?"""
+**Comandos rápidos:**
+- `/block <ip>` - Bloquear IP
+- `/unblock <ip>` - Desbloquear IP
+- `/blocked` - Listar IPs bloqueados
+- `/search <query>` - Pesquisar ficheiros
+- `/web <query>` - Pesquisar na internet
+- `/help` - Ver todos os comandos
+
+Em que posso ajudar hoje?"""
 
     def get_reasoning_history(self) -> List[Dict[str, Any]]:
         """Retorna o histórico de raciocínio."""
